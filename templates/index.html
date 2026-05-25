@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swikar'sAI_Assistant — Ensemble Image Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --card: #1a1a26;
+    --border: rgba(255,255,255,0.07);
+    --accent: #6c63ff;
+    --accent2: #00d4ff;
+    --accent3: #ff6b9d;
+    --text: #f0f0f8;
+    --muted: rgba(240,240,248,0.45);
+    --green: #00e5a0;
+    --yellow: #ffd166;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', sans-serif; min-height: 100vh; }
+
+  /* ── noise overlay ── */
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    opacity: 0.4;
+  }
+
+  /* ── grid bg ── */
+  body::after {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: linear-gradient(rgba(108,99,255,0.04) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(108,99,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* ── header ── */
+  header { text-align: center; padding: 3rem 0 2.5rem; }
+  .logo-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 1rem; }
+  .logo-icon { width: 48px; height: 48px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spacing: -0.03em; background: linear-gradient(135deg, #fff 30%, var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .subtitle { color: var(--muted); font-size: 1rem; margin-top: 0.5rem; }
+  .badge-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 1.2rem; }
+  .badge { padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 500; font-family: 'JetBrains Mono', monospace; border: 1px solid; }
+  .badge-yolo  { color: #ffd166; border-color: rgba(255,209,102,0.3); background: rgba(255,209,102,0.07); }
+  .badge-tf    { color: #ff6b9d; border-color: rgba(255,107,157,0.3); background: rgba(255,107,157,0.07); }
+  .badge-torch { color: #00d4ff; border-color: rgba(0,212,255,0.3);   background: rgba(0,212,255,0.07); }
+  .badge-ml    { color: #00e5a0; border-color: rgba(0,229,160,0.3);   background: rgba(0,229,160,0.07); }
+
+  /* ── drop zone ── */
+  #drop-zone {
+    border: 1.5px dashed rgba(108,99,255,0.4);
+    border-radius: 20px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    background: rgba(108,99,255,0.04);
+    position: relative;
+    overflow: hidden;
+  }
+  #drop-zone::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, rgba(108,99,255,0.12), transparent 70%);
+    pointer-events: none;
+  }
+  #drop-zone.drag-over { border-color: var(--accent); background: rgba(108,99,255,0.1); }
+  #drop-zone:hover { border-color: rgba(108,99,255,0.7); }
+  .upload-icon { font-size: 3.5rem; display: block; margin-bottom: 1rem; }
+  .drop-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.4rem; }
+  .drop-sub { color: var(--muted); font-size: 0.9rem; }
+  .browse-btn {
+    display: inline-block; margin-top: 1.2rem; padding: 10px 28px;
+    background: linear-gradient(135deg, var(--accent), #8b84ff);
+    border-radius: 10px; font-weight: 600; font-size: 0.9rem;
+    color: #fff; cursor: pointer; border: none; transition: opacity 0.2s, transform 0.15s;
+  }
+  .browse-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+
+  /* ── preview ── */
+  #preview-wrap { display: none; margin-top: 1.5rem; }
+  #preview-img { width: 100%; max-height: 320px; object-fit: contain; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); }
+  #analyze-btn {
+    width: 100%; margin-top: 1rem; padding: 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 12px; color: #fff; font-family: 'Space Grotesk', sans-serif;
+    font-size: 1rem; font-weight: 700; cursor: pointer; letter-spacing: 0.02em;
+    transition: opacity 0.2s, transform 0.15s; position: relative; overflow: hidden;
+  }
+  #analyze-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  #analyze-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* ── loader ── */
+  #loader { display: none; text-align: center; padding: 2.5rem; }
+  .loader-ring { width: 60px; height: 60px; border-radius: 50%; border: 3px solid rgba(108,99,255,0.2); border-top-color: var(--accent); animation: spin 0.9s linear infinite; margin: 0 auto 1rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loader-text { color: var(--muted); font-size: 0.9rem; }
+  .pipeline { display: flex; justify-content: center; gap: 1.5rem; margin-top: 1.2rem; flex-wrap: wrap; }
+  .pipe-step { display: flex; align-items: center; gap: 6px; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+  .pipe-dot { width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.4s ease-in-out infinite; }
+  .pipe-step:nth-child(1) .pipe-dot { background: var(--yellow); animation-delay: 0s; }
+  .pipe-step:nth-child(2) .pipe-dot { background: var(--accent3); animation-delay: 0.2s; }
+  .pipe-step:nth-child(3) .pipe-dot { background: var(--accent2); animation-delay: 0.4s; }
+  .pipe-step:nth-child(4) .pipe-dot { background: var(--green); animation-delay: 0.6s; }
+  @keyframes pulse { 0%,100%{opacity:.3;transform:scale(.8)} 50%{opacity:1;transform:scale(1.2)} }
+
+  /* ── results ── */
+  #results { display: none; margin-top: 1.5rem; animation: fadeUp 0.4s ease; }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+
+  .summary-box {
+    background: linear-gradient(135deg, rgba(108,99,255,0.12), rgba(0,212,255,0.06));
+    border: 1px solid rgba(108,99,255,0.25); border-radius: 16px; padding: 1.25rem 1.5rem;
+    margin-bottom: 1.25rem; display: flex; align-items: flex-start; gap: 12px;
+  }
+  .summary-icon { font-size: 1.5rem; flex-shrink: 0; }
+  .summary-text { font-size: 1rem; line-height: 1.6; color: var(--text); }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 1.25rem; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; text-align: center; }
+  .stat-num { font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .stat-num.purple { color: var(--accent); }
+  .stat-num.cyan   { color: var(--accent2); }
+  .stat-num.pink   { color: var(--accent3); }
+  .stat-num.green  { color: var(--green); }
+  .stat-num.yellow { color: var(--yellow); }
+
+  .section { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; }
+  .section-icon { font-size: 1.1rem; }
+  .section-title { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+
+  /* tags */
+  .tag-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 500; border: 1px solid; }
+  .tag-person { color: var(--accent);  border-color: rgba(108,99,255,0.35); background: rgba(108,99,255,0.1); }
+  .tag-animal { color: var(--green);   border-color: rgba(0,229,160,0.35);  background: rgba(0,229,160,0.08); }
+  .tag-object { color: var(--accent2); border-color: rgba(0,212,255,0.35);  background: rgba(0,212,255,0.08); }
+  .tag-scene  { color: var(--yellow);  border-color: rgba(255,209,102,0.35); background: rgba(255,209,102,0.08); }
+  .tag-model  { color: var(--accent3); border-color: rgba(255,107,157,0.35); background: rgba(255,107,157,0.08); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+
+  /* detections table */
+  .det-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .det-table th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .det-table td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .det-table tr:last-child td { border-bottom: none; }
+  .conf-bar-wrap { background: rgba(255,255,255,0.06); border-radius: 4px; height: 5px; width: 100px; }
+  .conf-bar { height: 5px; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .bbox-code { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); }
+
+  /* colors */
+  .color-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .color-swatch { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+  .swatch-dot { width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+  .swatch-info { display: flex; flex-direction: column; gap: 2px; }
+  .swatch-name { font-size: 13px; font-weight: 500; text-transform: capitalize; }
+  .swatch-hex  { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--muted); }
+  .swatch-pct  { font-size: 11px; color: var(--muted); }
+
+  /* classifier rows */
+  .clf-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .clf-row:last-child { border-bottom: none; }
+  .clf-label { flex: 1; font-size: 13px; text-transform: capitalize; }
+  .clf-bar-wrap { width: 140px; background: rgba(255,255,255,0.06); border-radius: 4px; height: 5px; }
+  .clf-bar { height: 5px; border-radius: 4px; }
+  .clf-pct { font-size: 12px; font-family: 'JetBrains Mono', monospace; color: var(--muted); min-width: 38px; text-align: right; }
+
+  /* error banner */
+  .error-box { background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3); border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--red); margin-bottom: 1rem; }
+
+  .reset-btn { width: 100%; margin-top: 0.75rem; padding: 12px; background: transparent; border: 1px solid var(--border); border-radius: 12px; color: var(--muted); font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; cursor: pointer; transition: border-color 0.2s, color 0.2s; }
+  .reset-btn:hover { border-color: var(--accent); color: var(--text); }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 3rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo-row">
+      <div class="logo-icon">🧠</div>
+      <h1>Swikar'sAI_Assistant</h1>
+    </div>
+    <p class="subtitle">Ensemble image analyzer · Full scene detection &amp; classification</p>
+    <div class="badge-row">
+      <span class="badge badge-yolo">YOLOv8</span>
+      <span class="badge badge-tf">TensorFlow · MobileNetV2</span>
+      <span class="badge badge-torch">PyTorch · ResNet-50</span>
+      <span class="badge badge-ml">K-Means Colors</span>
+    </div>
+  </header>
+
+  <!-- Drop zone -->
+  <div id="drop-zone"
+    onclick="document.getElementById('file-input').click()"
+    ondragover="onDrag(event,true)"
+    ondragleave="onDrag(event,false)"
+    ondrop="onDrop(event)">
+    <span class="upload-icon">📷</span>
+    <p class="drop-title">Drop your image here</p>
+    <p class="drop-sub">JPG, PNG, WEBP, GIF · Any size</p>
+    <button class="browse-btn" onclick="event.stopPropagation(); document.getElementById('file-input').click()">Browse files</button>
+  </div>
+  <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])">
+
+  <!-- Preview -->
+  <div id="preview-wrap">
+    <img id="preview-img" alt="Preview">
+    <button id="analyze-btn" onclick="analyze()">⚡ Run Ensemble Analysis</button>
+  </div>
+
+  <!-- Loader -->
+  <div id="loader">
+    <div class="loader-ring"></div>
+    <p class="loader-text">Running ensemble neural network pipeline…</p>
+    <div class="pipeline">
+      <div class="pipe-step"><div class="pipe-dot"></div><span>YOLOv8</span></div>
+      <div class="pipe-step"><div class="pipe-dot"></div><span>MobileNetV2</span></div>
+      <div class="pipe-step"><div class="pipe-dot"></div><span>ResNet-50</span></div>
+      <div class="pipe-step"><div class="pipe-dot"></div><span>K-Means</span></div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results"></div>
+
+</div>
+
+<footer>
+  <p>Built with YOLOv8 · TensorFlow · PyTorch · Flask &nbsp;|&nbsp;
+    <a href="https://github.com" target="_blank">View on GitHub</a>
+  </p>
+</footer>
+
+<script>
+let selectedFile = null;
+
+function onDrag(e, over) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.toggle('drag-over', over);
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+}
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('preview-img').src = ev.target.result;
+    document.getElementById('preview-wrap').style.display = 'block';
+    document.getElementById('drop-zone').style.display = 'none';
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('results').innerHTML = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function analyze() {
+  if (!selectedFile) return;
+  document.getElementById('preview-wrap').style.display = 'none';
+  document.getElementById('loader').style.display = 'block';
+  document.getElementById('results').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('image', selectedFile);
+
+  try {
+    const resp = await fetch('/analyze', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    renderResults(data);
+  } catch(e) {
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('preview-wrap').style.display = 'block';
+    alert('Analysis failed: ' + e.message);
+  }
+}
+
+function renderResults(d) {
+  document.getElementById('loader').style.display = 'none';
+
+  const totalAnimals = Object.values(d.animal_counts || {}).reduce((s,v)=>s+v,0);
+  const totalObjects = Object.values(d.object_counts || {}).reduce((s,v)=>s+v,0);
+
+  let html = '';
+
+  // Summary
+  html += `<div class="summary-box"><span class="summary-icon">🔍</span><p class="summary-text">${d.summary}</p></div>`;
+
+  // Stat cards
+  html += `<div class="stats-grid">
+    <div class="stat-card"><div class="stat-num purple">${d.people_count}</div><div class="stat-lbl">People</div></div>
+    <div class="stat-card"><div class="stat-num green">${totalAnimals}</div><div class="stat-lbl">Animals</div></div>
+    <div class="stat-card"><div class="stat-num cyan">${totalObjects}</div><div class="stat-lbl">Objects</div></div>
+    <div class="stat-card"><div class="stat-num yellow">${(d.dominant_colors||[]).length}</div><div class="stat-lbl">Colors</div></div>
+    <div class="stat-card"><div class="stat-num pink">${d.yolo_detections.length}</div><div class="stat-lbl">Detections</div></div>
+    <div class="stat-card"><div class="stat-num" style="font-size:1rem;margin-top:4px;color:var(--yellow)">${d.scene}</div><div class="stat-lbl">Scene</div></div>
+  </div>`;
+
+  // Detected entities
+  const allTags = [];
+  if (d.people_count > 0) allTags.push(`<span class="tag tag-person">👤 ${d.people_count} ${d.people_count===1?'person':'people'}</span>`);
+  for (const [k,v] of Object.entries(d.animal_counts||{}))
+    allTags.push(`<span class="tag tag-animal">🐾 ${v} ${k}${v>1?'s':''}</span>`);
+  for (const [k,v] of Object.entries(d.object_counts||{}))
+    allTags.push(`<span class="tag tag-object">📦 ${v} ${k}${v>1?'s':''}</span>`);
+  allTags.push(`<span class="tag tag-scene">🌄 ${d.scene}</span>`);
+
+  if (allTags.length)
+    html += `<div class="section"><div class="section-header"><span class="section-icon">🏷️</span><span class="section-title">Detected entities</span></div><div class="tag-row">${allTags.join('')}</div></div>`;
+
+  // YOLO Detections table
+  if (d.yolo_detections.length) {
+    const rows = d.yolo_detections.slice(0,20).map(det => {
+      const bw = Math.round(det.confidence*100);
+      return `<tr>
+        <td>${det.label}</td>
+        <td><div class="conf-bar-wrap"><div class="conf-bar" style="width:${bw}%"></div></div></td>
+        <td>${(det.confidence*100).toFixed(1)}%</td>
+        <td class="bbox-code">[${det.bbox.join(', ')}]</td>
+      </tr>`;
+    }).join('');
+    html += `<div class="section"><div class="section-header"><span class="section-icon">🎯</span><span class="section-title">YOLOv8 detections</span></div>
+      <table class="det-table"><thead><tr><th>Label</th><th>Confidence</th><th>%</th><th>BBox</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  // MobileNet + ResNet side by side
+  const buildClf = (preds, color) => preds.slice(0,5).map(p => {
+    const pct = Math.round(p.confidence*100);
+    return `<div class="clf-row">
+      <span class="clf-label">${p.label}</span>
+      <div class="clf-bar-wrap"><div class="clf-bar" style="width:${pct}%;background:${color}"></div></div>
+      <span class="clf-pct">${pct}%</span>
+    </div>`;
+  }).join('');
+
+  if (d.mobilenet_top5.length || d.resnet_top5.length) {
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="section"><div class="section-header"><span class="section-icon">🔴</span><span class="section-title">MobileNetV2</span></div>${buildClf(d.mobilenet_top5,'var(--accent3)')}</div>
+      <div class="section"><div class="section-header"><span class="section-icon">🔵</span><span class="section-title">ResNet-50</span></div>${buildClf(d.resnet_top5,'var(--accent2)')}</div>
+    </div>`;
+  }
+
+  // Colors
+  if (d.dominant_colors.length) {
+    const swatches = d.dominant_colors.map(c =>
+      `<div class="color-swatch">
+        <div class="swatch-dot" style="background:${c.hex}"></div>
+        <div class="swatch-info">
+          <span class="swatch-name">${c.name}</span>
+          <span class="swatch-hex">${c.hex}</span>
+          <span class="swatch-pct">${c.percentage}%</span>
+        </div>
+      </div>`
+    ).join('');
+    html += `<div class="section"><div class="section-header"><span class="section-icon">🎨</span><span class="section-title">Dominant colors · K-Means</span></div><div class="color-grid">${swatches}</div></div>`;
+  }
+
+  // Image info
+  html += `<div class="section"><div class="section-header"><span class="section-icon">📐</span><span class="section-title">Image info</span></div>
+    <div class="tag-row">
+      <span class="tag tag-model">size: ${d.image_size[0]}×${d.image_size[1]}px</span>
+      <span class="tag tag-model">models: 3</span>
+      <span class="tag tag-model">yolo: v8 nano</span>
+      <span class="tag tag-model">tf: mobilenetv2</span>
+      <span class="tag tag-model">torch: resnet50</span>
+    </div>
+  </div>`;
+
+  // Errors
+  if (d.errors && d.errors.length)
+    html += `<div class="error-box">⚠️ Partial errors: ${d.errors.join(' · ')}</div>`;
+
+  html += `<button class="reset-btn" onclick="resetUI()">↩ Analyze another image</button>`;
+
+  const el = document.getElementById('results');
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function resetUI() {
+  selectedFile = null;
+  document.getElementById('file-input').value = '';
+  document.getElementById('drop-zone').style.display = 'block';
+  document.getElementById('preview-wrap').style.display = 'none';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('results').innerHTML = '';
+}
+</script>
+</body>
+</html>
